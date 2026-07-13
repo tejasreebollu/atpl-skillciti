@@ -1,0 +1,83 @@
+```yaml
+trigger:
+- main
+
+variables:
+  # Service Connections
+  acrServiceConnection: 'acr-service-connection'
+  kubernetesServiceConnection: 'kube-connection'
+
+  # ACR Details
+  acrLoginServer: 'pythonstudenthub.azurecr.io'
+  imageRepository: 'pythonstudenthub'
+  imageTag: '$(Build.BuildId)'
+
+  # AKS Details
+  namespace: 'default'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+
+# ===========================
+# Build Stage
+# ===========================
+- stage: Build
+  displayName: Build and Push Docker Image
+
+  jobs:
+  - job: Build
+    displayName: Build Image
+
+    steps:
+    - checkout: self
+
+    - task: Docker@2
+      displayName: Login to ACR
+      inputs:
+        command: login
+        containerRegistry: $(acrServiceConnection)
+
+    - task: Docker@2
+      displayName: Build and Push Image
+      inputs:
+        command: buildAndPush
+        repository: $(imageRepository)
+        dockerfile: Dockerfile
+        containerRegistry: $(acrServiceConnection)
+        tags: |
+          $(imageTag)
+          latest
+
+# ===========================
+# Deploy Stage
+# ===========================
+- stage: Deploy
+  displayName: Deploy to AKS
+  dependsOn: Build
+
+  jobs:
+  - deployment: DeployToAKS
+    displayName: Deploy Application
+    environment: aks
+
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+
+          - task: KubernetesManifest@1
+            displayName: Deploy to AKS
+            inputs:
+              action: deploy
+              kubernetesServiceConnection: $(kubernetesServiceConnection)
+              namespace: $(namespace)
+              manifests: |
+                k8s/deployment.yml
+                k8s/service.yml
+              containers: |
+                $(acrLoginServer)/$(imageRepository):$(imageTag)
+```
+
